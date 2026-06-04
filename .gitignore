@@ -1,1 +1,13 @@
 .venv/
+.env
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+frontend/node_modules/
+frontend/dist/
+uploads/
+kb_roco_docs/
+smw_cache.json
+wt_debug.txt
+*.log

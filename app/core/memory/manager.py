@@ -41,6 +41,22 @@ class MemoryManager:
             long_term_items=long_items,
         )
 
+    async def get_relevant(self, session_id: str, query: str, limit: int = 8) -> list[str]:
+        """供 Agent 编排器使用。"""
+        ctx = await self.get_context(session_id, query)
+        items: list[str] = []
+        for m in ctx.short_term_messages:
+            items.append(m.content[:200])
+        for m in ctx.long_term_items:
+            items.append(m.content[:200])
+        return items[:limit]
+
+    async def append_turn(self, session_id: str, role: str, content: str, metadata=None) -> None:
+        """供 Agent 编排器使用。"""
+        from app.models.enums import MessageRole
+        r = MessageRole.USER if role == "user" else (MessageRole.ASSISTANT if role == "assistant" else MessageRole.SYSTEM)
+        await self.save(session_id, Message(role=r, content=content, metadata=metadata or {}))
+
     async def save(self, session_id: str, message: Message) -> None:
         """将新消息写入短期记忆（滑动窗口与压缩由 ShortTermMemory 负责）。"""
         try:

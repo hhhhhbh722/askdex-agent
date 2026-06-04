@@ -42,6 +42,12 @@ class Settings(BaseSettings):
         description="默认向量集合名",
     )
 
+    # Embedding 模型（可选，默认复用 openai_* 配置）
+    embedding_api_key: str = Field(default="", description="Embedding API Key（留空则复用 OPENAI_API_KEY）")
+    embedding_api_base: str = Field(default="", description="Embedding API Base（留空则复用 OPENAI_API_BASE）")
+    embedding_model: str = Field(default="text-embedding-3-small", description="Embedding 模型名")
+    embedding_dim: int = Field(default=1024, description="嵌入向量维度")
+
     log_level: str = Field(default="INFO", description="日志级别")
 
 

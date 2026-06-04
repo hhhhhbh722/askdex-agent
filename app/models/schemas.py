@@ -35,6 +35,8 @@ class ChatResponse(BaseModel):
     content: str = Field(description="助手回复正文")
     trace_id: str | None = Field(default=None, description="链路追踪 ID")
     usage: dict[str, Any] | None = Field(default=None, description="Token 用量")
+    steps: list[dict[str, Any]] = Field(default_factory=list, description="Agent 思考步骤")
+    mode: str = Field(default="", description="Agent 模式")
 
 
 class DocumentUploadResponse(BaseModel):

@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
-"""健康检查：进程存活与依赖探测。"""
-
+"""健康检查：存活、就绪、完整探测。"""
 from __future__ import annotations
 
 from typing import Any
@@ -17,26 +16,67 @@ router = APIRouter(tags=["health"])
 
 
 @router.get("/health")
-async def health() -> dict[str, str]:
-    """轻量存活探针（不访问外部依赖）。"""
+async def health() -> dict:
     return {"status": "ok"}
 
 
 @router.get("/health/ready")
-async def health_ready(
-    session: AsyncSession = Depends(get_async_session),
-) -> dict[str, Any]:
-    """就绪探针：检查数据库连通性。"""
+async def health_ready(session: AsyncSession = Depends(get_async_session)) -> dict[str, Any]:
     settings = get_settings()
     try:
         await session.execute(text("SELECT 1"))
-        db_ok = True
-    except Exception as exc:
-        logger.warning("数据库就绪检查失败: {}", exc)
-        db_ok = False
+        db = "up"
+        status = "ready"
+    except Exception as e:
+        logger.warning("DB 就绪检查失败: {}", e)
+        db = "down"
+        status = "degraded"
+    return {"status": status, "database": db, "app_env": settings.app_env}
 
+
+@router.get("/health/full")
+async def health_full(session: AsyncSession = Depends(get_async_session)) -> dict[str, Any]:
+    """完整检查：API + PostgreSQL + Redis + Milvus。"""
+    from app.core.wiring import get_state
+
+    settings = get_settings()
+    state = get_state()
+
+    # DB
+    try:
+        await session.execute(text("SELECT 1"))
+        db = "up"
+    except Exception:
+        db = "down"
+
+    # Redis
+    redis_client = state.get("redis")
+    try:
+        if redis_client:
+            await redis_client.ping()
+            redis_s = "up"
+        else:
+            redis_s = "disabled"
+    except Exception:
+        redis_s = "down"
+
+    # Milvus
+    milvus = state.get("milvus")
+    if milvus:
+        try:
+            await milvus._ensure_connection()
+            milvus_s = "up"
+        except Exception:
+            milvus_s = "down"
+    else:
+        milvus_s = "disabled"
+
+    all_ok = all(s == "up" for s in [db, redis_s, milvus_s] if s != "disabled")
     return {
-        "status": "ready" if db_ok else "degraded",
-        "database": "up" if db_ok else "down",
+        "status": "healthy" if all_ok else "degraded",
+        "api": "up",
+        "database": db,
+        "redis": redis_s,
+        "milvus": milvus_s,
         "app_env": settings.app_env,
     }

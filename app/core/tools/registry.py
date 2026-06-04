@@ -33,6 +33,15 @@ class ToolRegistry:
         """返回全部工具列表。"""
         return list(self._tools.values())
 
+    def list_tool_names(self) -> list[str]:
+        """供 Agent 编排器使用。"""
+        return list(self._tools.keys())
+
+    async def invoke(self, name: str, arguments: dict) -> str:
+        """供 Agent 编排器调用工具。"""
+        tool = self.get_tool(name)
+        return str(await tool.execute(**arguments))
+
     def get_tools_description(self) -> str:
         """生成所有工具的自然语言描述（用于 System Prompt）。"""
         lines: list[str] = []
