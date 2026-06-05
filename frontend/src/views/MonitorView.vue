@@ -141,6 +141,13 @@ onMounted(async () => {
     promptTokens.value = m.prompt_tokens || 0;
     completionTokens.value = m.completion_tokens || 0;
     stats.value.totalRequests = m.total_requests || 0;
+    traces.value = (m.traces || []).map((t: any) => ({
+      id: t.id,
+      operation: t.operation,
+      duration: t.duration || 0,
+      error: t.error || "",
+      spans: t.spans || [],
+    }));
     sessionCount.value = 0;
     // DeepSeek v4-pro 定价估算
     costEstimate.value = ((promptTokens.value / 1_000_000 * 0.27) + (completionTokens.value / 1_000_000 * 1.10)).toFixed(4);

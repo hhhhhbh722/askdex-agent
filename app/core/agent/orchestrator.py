@@ -161,7 +161,7 @@ class AgentOrchestrator:
 
     def _tool_names(self, intent: IntentContext) -> List[str]:
         all_names = self._tools.list_tool_names()
-        if intent.allowed_tools:
+        if intent.allowed_tools is not None:
             return [n for n in intent.allowed_tools if n in all_names]
         return all_names
 
@@ -197,6 +197,14 @@ class AgentOrchestrator:
         mode_used: OrchestrationMode = "react"
 
         try:
+            await self._append_memory(
+                session_id,
+                "user",
+                user_input,
+                {"agent": "orchestrator", "mode": mode, "trace_id": trace_id},
+                trace_id,
+            )
+
             if mode == "plan_execute":
                 mode_used = "plan_execute"
                 result = await self._run_plan_execute(
@@ -230,8 +238,22 @@ class AgentOrchestrator:
             answer = (result.final_answer if result else "") or ""
             success = bool(result and result.success)
 
+            if answer:
+                await self._append_memory(
+                    session_id,
+                    "assistant",
+                    answer,
+                    {
+                        "agent": mode_used,
+                        "success": success,
+                        "steps": len(steps),
+                        "trace_id": trace_id,
+                    },
+                    trace_id,
+                )
+
             reflection_report: Optional[ReflectionReport] = None
-            if self._enable_reflection and answer:
+            if answer and self._should_reflect(success, degraded, intent_ctx, steps):
                 try:
                     reflection_report = await self._run_reflection(
                         user_input,
@@ -272,6 +294,44 @@ class AgentOrchestrator:
                 error=error_msg,
                 degraded=degraded,
             )
+
+    def _should_reflect(
+        self,
+        success: bool,
+        degraded: bool,
+        intent: IntentContext,
+        steps: List[Dict[str, Any]],
+    ) -> bool:
+        if not self._enable_reflection:
+            return False
+        if degraded or not success or intent.confidence < 0.55:
+            return True
+        for step in steps:
+            if step.get("error"):
+                return True
+            if str(step.get("status", "")).lower() == "error":
+                return True
+            record = step.get("record")
+            if isinstance(record, dict) and (record.get("error") or record.get("status") == "error"):
+                return True
+        return False
+
+    async def _append_memory(
+        self,
+        session_id: str,
+        role: str,
+        content: str,
+        metadata: Optional[Dict[str, Any]],
+        trace_id: str,
+    ) -> None:
+        if not content.strip():
+            return
+        try:
+            await self._memory.append_turn(session_id, role, content, metadata=metadata or {})
+            self._tracer.log_event(trace_id, "memory.append", {"role": role, "content_len": len(content)})
+        except Exception as e:  # noqa: BLE001
+            logger.warning("写入短期记忆失败，将继续执行: %s", e)
+            self._tracer.log_event(trace_id, "memory.append_failed", {"role": role, "error": str(e)})
 
     async def _run_react(
         self,

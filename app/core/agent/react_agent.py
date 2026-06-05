@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Protocol, Sequence
 
@@ -93,6 +94,9 @@ class ToolInvoker(Protocol):
     async def invoke(self, name: str, arguments: Dict[str, Any]) -> str:
         ...
 
+    def get_tools_description(self, names: Sequence[str] | None = None) -> str:
+        ...
+
 
 @dataclass
 class AgentResult:
@@ -165,6 +169,12 @@ class ReActAgent:
 
     def _tool_catalog_text(self, tool_names: Sequence[str]) -> str:
         """工具列表描述（若注册表无描述则仅列名）。"""
+        describe = getattr(self._tools, "get_tools_description", None)
+        if callable(describe):
+            try:
+                return str(describe(tool_names))
+            except Exception as e:  # noqa: BLE001
+                logger.warning("读取工具 schema 描述失败，降级为工具名列表: %s", e)
         lines = []
         for name in tool_names:
             lines.append(f"- {name}")
@@ -197,6 +207,7 @@ class ReActAgent:
         mem_block = "\n".join(f"- {s}" for s in mem_snippets) if mem_snippets else "（无）"
 
         for step_idx in range(self.max_steps):
+            tool_started: float | None = None
             tool_desc = self._tool_catalog_text(tool_names)
             history_block = "\n".join(history_lines) if history_lines else "（尚无）"
             user_prompt = build_react_user_prompt(query, tool_desc, history_block)
@@ -240,16 +251,6 @@ class ReActAgent:
                 steps.append(rec)
                 if trace_cb:
                     await trace_cb(rec)
-                if self._memory is not None:
-                    try:
-                        await self._memory.append_turn(
-                            session_id,
-                            "assistant",
-                            answer,
-                            metadata={"agent": "react", "steps": len(steps)},
-                        )
-                    except Exception as e:  # noqa: BLE001
-                        logger.warning("写入记忆失败: %s", e)
                 return AgentResult(success=True, final_answer=answer, steps=steps)
 
             action = parsed.get("action")
@@ -272,8 +273,11 @@ class ReActAgent:
                 obs = f"错误：工具 [{action}] 不在允许列表中。"
             else:
                 try:
+                    tool_started = time.perf_counter()
                     obs = await self._tools.invoke(action, action_input or {})
+                    rec["tool_duration_ms"] = int((time.perf_counter() - tool_started) * 1000)
                 except Exception as e:  # noqa: BLE001
+                    rec["tool_duration_ms"] = int((time.perf_counter() - tool_started) * 1000) if tool_started is not None else 0
                     obs = f"工具执行异常: {e}"
                     logger.exception("工具调用失败")
 

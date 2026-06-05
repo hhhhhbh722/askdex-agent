@@ -32,6 +32,10 @@ class Settings(BaseSettings):
         description="SQLAlchemy 异步数据库 URL（推荐 postgresql+asyncpg）",
     )
     redis_url: str = Field(default="redis://localhost:6379/0", description="Redis URL")
+    redis_memory_ttl_seconds: int = Field(
+        default=24 * 60 * 60,
+        description="Redis 短期会话记忆 TTL，秒；<=0 表示不过期",
+    )
 
     milvus_host: str = Field(default="localhost", description="Milvus 主机")
     milvus_port: int = Field(default=19530, description="Milvus 端口")

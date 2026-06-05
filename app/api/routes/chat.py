@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
+import time
 import uuid
 from typing import AsyncIterator
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from loguru import logger
 from openai import AsyncOpenAI
@@ -46,13 +47,48 @@ async def chat(request: ChatRequest) -> ChatResponse:
         raise HTTPException(503, "未配置 API Key")
 
     user_text = request.messages[-1].content if request.messages else ""
+    started = time.perf_counter()
+    intent_result = await _intent.recognize(
+        user_text,
+        context={"messages": [m.model_dump() for m in request.messages[-6:]]},
+    )
+    clarify = await _intent.clarify(user_text, intent_result)
+    if clarify and len(user_text.strip()) < 12:
+        return ChatResponse(
+            id=str(uuid.uuid4()),
+            model=settings.openai_model,
+            content=clarify,
+            steps=[{"phase": "intent", "status": "clarify", "intent": intent_result.model_dump()}],
+            mode="clarify",
+        )
+
     # 直接调 LLM（Agent 在后台处理工具调用）
     agent = get_state().get("agent")
     if agent:
         try:
-            from app.core.agent.orchestrator import AgentResponse
-            resp = await agent.run(user_text, session_id=request.conversation_id or str(uuid.uuid4()))
+            from app.core.agent.orchestrator import AgentResponse, IntentContext
+            allowed_tools = _allowed_tools_for_intent(intent_result)
+            preferred_mode = request.mode or _mode_for_intent(intent_result)
+            resp = await agent.run(
+                user_text,
+                session_id=request.conversation_id or str(uuid.uuid4()),
+                mode=preferred_mode,
+                intent=IntentContext(
+                    intent=intent_result.intent,
+                    confidence=intent_result.confidence,
+                    slots={**intent_result.slots, "sub_intent": intent_result.sub_intent},
+                    preferred_mode=preferred_mode,
+                    allowed_tools=allowed_tools,
+                ),
+            )
             if isinstance(resp, AgentResponse):
+                _record_agent_trace(
+                    trace_id=resp.trace_id,
+                    operation=f"agent.{resp.mode_used}",
+                    started=started,
+                    error=resp.error,
+                    steps=resp.steps,
+                )
                 return ChatResponse(id=str(uuid.uuid4()), model=settings.openai_model,
                                     content=resp.answer, trace_id=resp.trace_id,
                                     steps=resp.steps, mode=resp.mode_used)
@@ -77,6 +113,74 @@ async def chat(request: ChatRequest) -> ChatResponse:
                         usage={"prompt_tokens": resp.usage.prompt_tokens if resp.usage else 0,
                                "completion_tokens": resp.usage.completion_tokens if resp.usage else 0,
                                "total_tokens": resp.usage.total_tokens if resp.usage else 0})
+
+
+def _allowed_tools_for_intent(intent_result) -> list[str] | None:
+    sub = str(intent_result.sub_intent or "")
+    intent = str(intent_result.intent or "")
+    if "计算" in sub:
+        return ["calculator"]
+    if "搜索" in sub:
+        return ["web_search"]
+    if "数据" in sub or "sql" in sub.lower():
+        return ["database_query"]
+    if "知识" in sub or "问答" in intent:
+        return ["knowledge_base", "calculator"]
+    if "闲聊" in sub:
+        return []
+    return None
+
+
+def _mode_for_intent(intent_result) -> str:
+    sub = str(intent_result.sub_intent or "")
+    intent = str(intent_result.intent or "")
+    if "任务" in intent or "数据" in sub:
+        return "plan_execute"
+    return "react"
+
+
+def _record_agent_trace(
+    trace_id: str,
+    operation: str,
+    started: float,
+    error: str | None,
+    steps: list[dict],
+) -> None:
+    _stats["total_requests"] += 1
+    duration_ms = int((time.perf_counter() - started) * 1000)
+    _stats["traces"].insert(0, {
+        "id": trace_id,
+        "operation": operation,
+        "duration": duration_ms,
+        "error": error,
+        "spans": [
+            {
+                "id": str(step.get("step", step.get("subtask_id", idx))),
+                "operation": str(step.get("phase") or step.get("action") or step.get("subtask_id") or "step"),
+                "duration": int(step.get("tool_duration_ms") or 0),
+            }
+            for idx, step in enumerate(steps[:20])
+        ],
+    })
+    _stats["traces"] = _stats["traces"][:50]
+
+
+@router.get("/chat/memory")
+async def chat_memory(session_id: str = Query(...)) -> dict:
+    """Debug endpoint for the current Redis short-term conversation memory."""
+    redis_client = get_state().get("redis")
+    if not redis_client:
+        raise HTTPException(503, "Redis 未启用")
+
+    key = f"stm:session:{session_id}"
+    raw_items = await redis_client.lrange(key, 0, -1)
+    items = []
+    for raw in raw_items:
+        try:
+            items.append(json.loads(raw))
+        except Exception:
+            items.append({"raw": str(raw)})
+    return {"session_id": session_id, "key": key, "count": len(items), "messages": items}
 
 
 @router.post("/chat/stream")

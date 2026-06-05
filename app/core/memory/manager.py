@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""统一记忆管理：协调短期记忆与长期记忆。"""
+"""Unified memory manager: short-term Redis memory plus optional long-term recall."""
 
 from __future__ import annotations
 
@@ -11,18 +11,18 @@ from app.models.schemas import MemoryContext, Message
 
 
 class MemoryManager:
-    """统一记忆管理器：协调短期记忆和长期记忆。"""
+    """Coordinate short-term and long-term memory.
+
+    Current stable path:
+    - short-term memory is written to Redis
+    - long-term memory is only recalled if the injected implementation supports it
+    """
 
     def __init__(self, short_term: ShortTermMemory, long_term: LongTermMemory) -> None:
-        """
-        :param short_term: 短期记忆实现（Redis + 窗口）
-        :param long_term: 长期记忆实现（向量库）
-        """
         self._stm = short_term
         self._ltm = long_term
 
     async def get_context(self, session_id: str, query: str) -> MemoryContext:
-        """获取与当前查询相关的记忆上下文（短期历史 + 长期召回）。"""
         try:
             short_msgs = await self._stm.get_history(session_id)
         except Exception as e:
@@ -42,7 +42,6 @@ class MemoryManager:
         )
 
     async def get_relevant(self, session_id: str, query: str, limit: int = 8) -> list[str]:
-        """供 Agent 编排器使用。"""
         ctx = await self.get_context(session_id, query)
         items: list[str] = []
         for m in ctx.short_term_messages:
@@ -52,13 +51,18 @@ class MemoryManager:
         return items[:limit]
 
     async def append_turn(self, session_id: str, role: str, content: str, metadata=None) -> None:
-        """供 Agent 编排器使用。"""
         from app.models.enums import MessageRole
-        r = MessageRole.USER if role == "user" else (MessageRole.ASSISTANT if role == "assistant" else MessageRole.SYSTEM)
-        await self.save(session_id, Message(role=r, content=content, metadata=metadata or {}))
+
+        role_enum = (
+            MessageRole.USER
+            if role == "user"
+            else MessageRole.ASSISTANT
+            if role == "assistant"
+            else MessageRole.SYSTEM
+        )
+        await self.save(session_id, Message(role=role_enum, content=content, metadata=metadata or {}))
 
     async def save(self, session_id: str, message: Message) -> None:
-        """将新消息写入短期记忆（滑动窗口与压缩由 ShortTermMemory 负责）。"""
         try:
             await self._stm.add_message(session_id, message)
         except Exception as e:

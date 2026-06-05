@@ -606,6 +606,7 @@ body {
   padding: 20px;
   margin-bottom: 16px;
   box-shadow: 0 14px 30px rgba(0, 0, 0, 0.18);
+  overflow-x: auto;
 }
 
 .card h3 {
@@ -629,6 +630,14 @@ body {
 }
 
 .card-wide { grid-column: 1 / -1; }
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
 
 /* ===== 表单 ===== */
 .form-group {
@@ -704,6 +713,23 @@ input[type="range"]::-webkit-slider-thumb {
 
 .form-row .form-group { flex: 1; }
 
+.upload-controls {
+  margin-bottom: 14px;
+}
+
+.compact-row {
+  align-items: stretch;
+  max-width: none;
+  margin: 0;
+}
+
+.compact-select {
+  width: auto;
+  min-width: 120px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
 /* ===== Toggle / Switch ===== */
 .toggle-list {
   display: flex;
@@ -763,6 +789,7 @@ input[type="range"]::-webkit-slider-thumb {
 /* ===== 数据表格 ===== */
 .data-table {
   width: 100%;
+  min-width: 720px;
   border-collapse: collapse;
   font-size: 13px;
 }
@@ -776,11 +803,13 @@ input[type="range"]::-webkit-slider-thumb {
   text-transform: uppercase;
   letter-spacing: 0.5px;
   border-bottom: 1px solid var(--border-soft);
+  white-space: nowrap;
 }
 
 .data-table td {
   padding: 10px 12px;
   border-bottom: 1px solid var(--border-soft);
+  white-space: nowrap;
 }
 
 .data-table tr:last-child td { border-bottom: none; }
@@ -845,6 +874,7 @@ input[type="range"]::-webkit-slider-thumb {
   font-size: 12px;
   padding: 4px 8px;
   border-radius: 4px;
+  white-space: nowrap;
 }
 
 .btn-text:hover { color: var(--text); background: var(--bg); }
@@ -932,6 +962,8 @@ input[type="range"]::-webkit-slider-thumb {
 
 .progress-item {
   display: flex;
+  align-items: center;
+  gap: 10px;
   justify-content: space-between;
   padding: 6px 0;
   font-size: 13px;
@@ -1139,16 +1171,30 @@ input[type="range"]::-webkit-slider-thumb {
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
+  background: rgba(255,255,255,0.02);
 }
 
 .think-detail summary {
   cursor: pointer;
-  padding: 8px 12px;
+  padding: 10px 12px;
   font-size: 13px;
   font-weight: 600;
   color: var(--accent);
   background: rgba(59,130,246,0.08);
   user-select: none;
+}
+
+.think-detail > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.think-count {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .think-steps {
@@ -1161,21 +1207,36 @@ input[type="range"]::-webkit-slider-thumb {
 
 .think-step-card {
   background: var(--bg);
+  border: 1px solid var(--border-soft);
   border-radius: 6px;
-  padding: 10px 12px;
+  overflow: hidden;
 }
 
-.think-step-header {
+.think-step-summary {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
-  margin-bottom: 6px;
+  padding: 10px 12px;
+  cursor: pointer;
+  list-style: none;
 }
+
+.think-step-summary::-webkit-details-marker { display: none; }
 
 .think-step-num {
   font-size: 11px;
   color: var(--text-muted);
   font-weight: 600;
+}
+
+.think-step-title {
+  flex: 1;
+  min-width: 120px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
 }
 
 .think-phase-badge {
@@ -1186,6 +1247,7 @@ input[type="range"]::-webkit-slider-thumb {
   border-radius: 10px;
 }
 
+.think-status-badge,
 .think-action-badge {
   font-size: 11px;
   background: rgba(251,191,36,0.2);
@@ -1194,24 +1256,70 @@ input[type="range"]::-webkit-slider-thumb {
   border-radius: 10px;
 }
 
-.think-input {
-  margin-bottom: 6px;
+.think-status-badge.ok {
+  background: rgba(34,197,94,0.16);
+  color: #4ade80;
 }
 
-.think-input code {
+.think-status-badge.danger {
+  background: rgba(239,68,68,0.16);
+  color: #f87171;
+}
+
+.think-step-body {
+  padding: 0 12px 12px;
+}
+
+.think-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.4fr);
+  gap: 10px;
+}
+
+.think-field {
+  margin-top: 10px;
+}
+
+.think-field-label {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  margin-bottom: 5px;
+  text-transform: uppercase;
+}
+
+.think-field-label.danger { color: #f87171; }
+
+.think-field-text {
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.think-pill {
+  display: inline-flex;
+  max-width: 100%;
+  padding: 5px 9px;
+  border-radius: 999px;
+  color: #fbbf24;
+  background: rgba(251,191,36,0.12);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.think-code {
   font-size: 11px;
   background: rgba(255,255,255,0.05);
-  padding: 4px 8px;
+  padding: 8px;
   border-radius: 4px;
   display: block;
-  word-break: break-all;
-}
-
-.think-obs-label {
-  font-size: 11px;
-  font-weight: 600;
-  color: #22c55e;
-  margin-bottom: 4px;
+  overflow: auto;
+  max-height: 240px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  border: 1px solid var(--border-soft);
 }
 
 .think-obs-content {
@@ -1227,10 +1335,31 @@ input[type="range"]::-webkit-slider-thumb {
   border-left: 2px solid #22c55e;
 }
 
-.think-obs-empty {
+.think-error {
   font-size: 12px;
-  color: #fbbf24;
-  font-style: italic;
+  color: #fecaca;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  background: rgba(239,68,68,0.1);
+  border-left: 2px solid #ef4444;
+  border-radius: 4px;
+  padding: 8px;
+}
+
+.think-raw {
+  margin-top: 10px;
+}
+
+.think-raw summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 0;
+  background: transparent;
+}
+
+.think-raw .think-code {
+  margin-top: 8px;
 }
 
 /* ===== 聊天布局 ===== */
@@ -1263,6 +1392,12 @@ input[type="range"]::-webkit-slider-thumb {
   .input-row { gap: 8px; }
   .mode-select { max-width: 118px; }
   .msg-bubble { max-width: 88%; }
+  .think-grid { grid-template-columns: 1fr; }
+  .think-step-summary { align-items: flex-start; }
+  .form-row { flex-direction: column; }
+  .card-head { align-items: flex-start; gap: 10px; flex-direction: column; }
+  .toolbar-actions { justify-content: flex-start; }
+  .compact-select { width: 100%; }
   .status-grid { grid-template-columns: repeat(2, 1fr); }
   .monitor-grid { grid-template-columns: 1fr; }
   .settings-grid { grid-template-columns: 1fr; }

@@ -21,11 +21,19 @@ class EmbeddingAPI:
 
     def _headers(self): return {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
 
+    @staticmethod
+    def _raise_for_embedding_error(response) -> None:
+        try:
+            response.raise_for_status()
+        except Exception as exc:
+            body = getattr(response, "text", "") or ""
+            raise RuntimeError(f"Embedding API 请求失败: HTTP {response.status_code} {body[:500]}") from exc
+
     def encode(self, texts: list[str]) -> list[list[float]]:
         import requests
         r = requests.post(f"{self.base_url}/embeddings", json={"model": self.model, "input": texts},
                           headers=self._headers(), timeout=60)
-        r.raise_for_status()
+        self._raise_for_embedding_error(r)
         d = r.json()
         return [x["embedding"] for x in sorted(d["data"], key=lambda x: x["index"])]
 
@@ -33,7 +41,7 @@ class EmbeddingAPI:
         async with httpx.AsyncClient() as c:
             r = await c.post(f"{self.base_url}/embeddings", json={"model": self.model, "input": texts},
                              headers=self._headers(), timeout=60)
-            r.raise_for_status()
+            self._raise_for_embedding_error(r)
             d = r.json()
             return [x["embedding"] for x in sorted(d["data"], key=lambda x: x["index"])]
 
@@ -70,7 +78,7 @@ def init_redis(settings) -> any:
 
 # ---- RAG 检索 ----
 
-async def rag_search(query: str, top_k: int = 5) -> list[dict]:
+async def rag_search(query: str, top_k: int = 5, filters: dict | None = None) -> list[dict]:
     """完整的检索流水线：Query增强 → 混合检索 → Reranker精排。"""
     emb = _state.get("embedding")
     milvus = _state.get("milvus")
@@ -85,18 +93,33 @@ async def rag_search(query: str, top_k: int = 5) -> list[dict]:
         query=query, embedding=emb, milvus=milvus,
         collection=s.milvus_collection_name, llm=llm,
         reranker=reranker, top_k=top_k, hybrid=True,
-        enable_hyde=True,
+        enable_hyde=True, filters=filters,
     )
 
 
 # ---- ETL → Milvus ----
 
-async def embed_chunks(chunks: list[str], chunk_ids: list[str], source: str = "") -> int:
+async def embed_chunks(
+    chunks: list[str],
+    chunk_ids: list[str],
+    source: str = "",
+    group: str = "",
+    parent_group: str = "",
+    child_group: str = "",
+) -> int:
     emb, milvus = _state.get("embedding"), _state.get("milvus")
     if not emb or not milvus or not chunks: return 0
     s = _state["settings"]
     vecs = await emb.aencode(chunks)
-    meta = [{"id": cid, "content": text[:65000], "source": source, "chunk_index": i}
+    meta = [{
+        "id": cid,
+        "content": text[:65000],
+        "source": source,
+        "group": group,
+        "parent_group": parent_group,
+        "child_group": child_group,
+        "chunk_index": i,
+    }
             for i, (cid, text) in enumerate(zip(chunk_ids, chunks))]
     await milvus.insert(s.milvus_collection_name, vecs, meta)
     return len(vecs)
@@ -168,7 +191,13 @@ def build_agent(settings, embedding, milvus, redis):
     # 记忆
     from app.core.memory.short_term import ShortTermMemory
     from app.core.memory.manager import MemoryManager
-    stm = ShortTermMemory(redis_client=redis, llm=None, window_size=20, max_tokens=4000)
+    stm = ShortTermMemory(
+        redis_client=redis,
+        llm=None,
+        window_size=20,
+        max_tokens=4000,
+        ttl_seconds=settings.redis_memory_ttl_seconds,
+    )
     ltm = _SimpleLTM()  # 长期记忆简化版
     memory = MemoryManager(short_term=stm, long_term=ltm)
 
@@ -189,9 +218,17 @@ class _KBTool:
     description = "查询知识库搜索已上传的文档内容。输入 query 参数指定搜索关键词。"
 
     def __init__(self, embedding=None, milvus=None):
-        self.parameters = []
+        from app.core.tools.base import ToolParameter
+        self.parameters = [
+            ToolParameter(name="query", type="string", description="要在知识库中检索的问题或关键词", required=True)
+        ]
         self._emb = embedding
         self._milvus = milvus
+
+    def schema_parameters(self):
+        properties = {p.name: {"type": p.type, "description": p.description} for p in self.parameters}
+        required = [p.name for p in self.parameters if p.required]
+        return {"type": "object", "properties": properties, "required": required}
 
     async def execute(self, **kwargs):
         q = str(kwargs.get("query", "") or kwargs.get("expression", ""))
@@ -230,7 +267,7 @@ class _LLMAdapter:
 class _AgentConfig:
     def get(self, key, default=None):
         return {
-            "enable_reflection": False, "react_max_steps": 8,
+            "enable_reflection": True, "react_max_steps": 8,
             "max_replan_attempts": 2, "fallback_react_on_plan_failure": True,
             "reflection_min_quality": 60,
         }.get(key, default)

@@ -12,6 +12,8 @@ export interface ChatRequest {
   model?: string;
   temperature?: number;
   max_tokens?: number;
+  conversation_id?: string;
+  mode?: "react" | "plan_execute";
 }
 
 export interface ChatResponse {
@@ -20,6 +22,29 @@ export interface ChatResponse {
   content: string;
   trace_id?: string;
   usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+  steps?: AgentStep[];
+  mode?: string;
+}
+
+export interface AgentStep {
+  step?: number;
+  phase?: string;
+  ts?: number;
+  action?: string;
+  action_input?: unknown;
+  observation?: string;
+  raw_llm?: string;
+  parsed?: Record<string, unknown>;
+  final?: boolean;
+  error?: string;
+  status?: string;
+  subtask_id?: string;
+  title?: string;
+  action_type?: string;
+  tool_name?: string;
+  llm_output?: string;
+  record?: Record<string, unknown>;
+  [key: string]: unknown;
 }
 
 export interface StreamChunk {
@@ -34,6 +59,10 @@ export interface DocumentInfo {
   filename: string;
   mime_type?: string;
   status: string;
+  group: string;
+  parent_group: string;
+  child_group: string;
+  chunk_count: number;
   created_at?: string;
 }
 
@@ -42,7 +71,25 @@ export interface UploadResponse {
   filename: string;
   status: string;
   chunk_count: number;
+  group: string;
+  parent_group: string;
+  child_group: string;
   message: string;
+}
+
+export interface BatchUploadResponse {
+  id?: string;
+  job_id?: string;
+  status: string;
+  total: number;
+  processed?: number;
+  success: number;
+  failed: number;
+  current?: string;
+  group?: string;
+  parent_group?: string;
+  child_group?: string;
+  results: UploadResponse[];
 }
 
 export interface HealthStatus {
@@ -136,9 +183,17 @@ export async function chatStream(
 
 // ---- 文档 ----
 
-export async function uploadDocument(file: File): Promise<UploadResponse> {
+export async function uploadDocument(
+  file: File,
+  group = "",
+  parentGroup = "",
+  childGroup = ""
+): Promise<UploadResponse> {
   const form = new FormData();
   form.append("file", file);
+  form.append("group", group);
+  form.append("parent_group", parentGroup);
+  form.append("child_group", childGroup);
 
   const resp = await fetch(`${BASE}/documents/upload`, {
     method: "POST",
@@ -151,6 +206,35 @@ export async function uploadDocument(file: File): Promise<UploadResponse> {
   return resp.json();
 }
 
+export async function uploadDocuments(
+  files: File[],
+  group = "",
+  parentGroup = "",
+  childGroup = ""
+): Promise<BatchUploadResponse> {
+  const form = new FormData();
+  files.forEach((file) => form.append("files", file));
+  form.append("group", group);
+  form.append("parent_group", parentGroup);
+  form.append("child_group", childGroup);
+
+  const resp = await fetch(`${BASE}/documents/batch-upload`, {
+    method: "POST",
+    body: form,
+  });
+  if (!resp.ok) {
+    const err = await resp.text().catch(() => "");
+    throw new Error(err || `Batch upload failed (${resp.status})`);
+  }
+  return resp.json();
+}
+
+export async function getUploadJob(jobId: string): Promise<BatchUploadResponse> {
+  const resp = await fetch(`${BASE}/documents/jobs/${jobId}`);
+  if (!resp.ok) throw new Error(`Upload job failed (${resp.status})`);
+  return resp.json();
+}
+
 export async function listDocuments(): Promise<DocumentInfo[]> {
   const resp = await fetch(`${BASE}/documents`);
   if (!resp.ok) throw new Error(`List failed (${resp.status})`);
@@ -160,6 +244,19 @@ export async function listDocuments(): Promise<DocumentInfo[]> {
 export async function deleteDocument(id: string): Promise<void> {
   const resp = await fetch(`${BASE}/documents/${id}`, { method: "DELETE" });
   if (!resp.ok) throw new Error(`Delete failed (${resp.status})`);
+}
+
+export async function updateDocumentGroup(
+  id: string,
+  payload: { group?: string; parent_group?: string; child_group?: string }
+): Promise<{ id: string; group: string; parent_group: string; child_group: string }> {
+  const resp = await fetch(`${BASE}/documents/${id}/group`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!resp.ok) throw new Error(`Update group failed (${resp.status})`);
+  return resp.json();
 }
 
 // ---- 对话历史 ----

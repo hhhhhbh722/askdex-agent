@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Protocol, Sequence
 
@@ -119,6 +120,37 @@ class PlannerAgent:
         self._memory = memory
         self.max_replan_attempts = max(0, max_replan_attempts)
 
+    def _build_tool_args(self, task: SubTask, query: str) -> Dict[str, Any]:
+        """Build tool arguments from registered tool parameter names."""
+        hint = (task.tool_args_hint or task.description or query).strip()
+        tool_name = task.tool_name or ""
+        get_tool = getattr(self._tools, "get_tool", None)
+        if callable(get_tool) and tool_name:
+            try:
+                tool = get_tool(tool_name)
+                params = getattr(tool, "parameters", []) or []
+                args: Dict[str, Any] = {}
+                for param in params:
+                    name = str(getattr(param, "name", ""))
+                    if not name:
+                        continue
+                    if name in {"query", "expression", "sql"}:
+                        args[name] = hint or query
+                    else:
+                        args[name] = hint or query
+                if args:
+                    return args
+            except Exception as e:  # noqa: BLE001
+                logger.warning("构造工具参数失败 tool=%s err=%s", tool_name, e)
+
+        if tool_name in {"knowledge_base", "web_search"}:
+            return {"query": hint or query}
+        if tool_name == "calculator":
+            return {"expression": hint or query}
+        if tool_name == "database_query":
+            return {"sql": hint}
+        return {"query": hint or query}
+
     async def plan(self, query: str) -> List[SubTask]:
         """根据用户目标生成子任务列表。"""
         messages: Sequence[Dict[str, str]] = [
@@ -157,6 +189,7 @@ class PlannerAgent:
         state = PlanExecuteState(plan=list(plan), results=[])
 
         for idx, task in enumerate(plan):
+            tool_started: float | None = None
             rec: Dict[str, Any] = {
                 "subtask_id": task.id,
                 "title": task.title,
@@ -166,9 +199,11 @@ class PlannerAgent:
                 if task.action_type == "tool" and task.tool_name:
                     if allowed is not None and task.tool_name not in allowed:
                         raise RuntimeError(f"工具 {task.tool_name} 不在允许列表中")
-                    # 将 hint 作为简单参数传入（企业场景可换为结构化解析）
-                    args = {"hint": task.tool_args_hint or "", "user_query": query}
+                    args = self._build_tool_args(task, query)
+                    rec["action_input"] = args
+                    tool_started = time.perf_counter()
                     obs = await self._tools.invoke(task.tool_name, args)
+                    rec["tool_duration_ms"] = int((time.perf_counter() - tool_started) * 1000)
                     rec["observation"] = obs[:8000]
                     rec["status"] = "ok"
                 else:
@@ -189,6 +224,8 @@ class PlannerAgent:
                     rec["status"] = "ok"
             except Exception as e:  # noqa: BLE001
                 logger.exception("子任务执行失败: %s", task.id)
+                if tool_started is not None and "tool_duration_ms" not in rec:
+                    rec["tool_duration_ms"] = int((time.perf_counter() - tool_started) * 1000)
                 rec["status"] = "error"
                 rec["error"] = str(e)
                 results.append(rec)
@@ -228,17 +265,6 @@ class PlannerAgent:
                 steps=results,
                 error=f"汇总阶段失败: {e}",
             )
-
-        if self._memory is not None:
-            try:
-                await self._memory.append_turn(
-                    session_id,
-                    "assistant",
-                    final,
-                    metadata={"agent": "planner", "subtasks": len(plan)},
-                )
-            except Exception as e:  # noqa: BLE001
-                logger.warning("写入记忆失败: %s", e)
 
         return AgentResult(success=True, final_answer=final.strip(), steps=results)
 

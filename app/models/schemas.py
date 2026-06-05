@@ -25,6 +25,7 @@ class ChatRequest(BaseModel):
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     max_tokens: int | None = Field(default=None, ge=1)
     conversation_id: str | None = Field(default=None, description="可选会话 ID")
+    mode: str | None = Field(default=None, description="Agent 模式：react | plan_execute")
 
 
 class ChatResponse(BaseModel):
@@ -46,6 +47,9 @@ class DocumentUploadResponse(BaseModel):
     filename: str
     status: str
     chunk_count: int = 0
+    group: str = ""
+    parent_group: str = ""
+    child_group: str = ""
     message: str = "ok"
 
 
@@ -56,6 +60,10 @@ class DocumentInfo(BaseModel):
     filename: str
     mime_type: str | None = None
     status: str
+    group: str = ""
+    parent_group: str = ""
+    child_group: str = ""
+    chunk_count: int = 0
     created_at: str | None = None
 
 
@@ -63,6 +71,14 @@ class DocumentUploadRequest(BaseModel):
     """文档上传附加元数据（可选）。"""
 
     tags: list[str] = Field(default_factory=list)
+
+
+class DocumentGroupUpdate(BaseModel):
+    """更新文档分组。"""
+
+    group: str = ""
+    parent_group: str = ""
+    child_group: str = ""
 
 
 class Message(BaseModel):

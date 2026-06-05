@@ -18,6 +18,7 @@ async def retrieval_pipeline(
     llm=None, reranker: Reranker | None = None, top_k: int = 5,
     hybrid: bool = True, enable_hyde: bool = False,
     history: list[dict] | None = None,
+    filters: dict | None = None,
 ) -> list[dict]:
     """
     完整检索流水线：
@@ -45,6 +46,8 @@ async def retrieval_pipeline(
         except Exception:
             pass
 
+    expr = _build_milvus_expr(filters or {})
+
     # 每路检索结果
     all_lists: list[list[dict]] = []
 
@@ -52,11 +55,12 @@ async def retrieval_pipeline(
         vec = (await embedding.aencode([q]))[0]
         try:
             results = await milvus.hybrid_search(
-                collection, vec, q, top_k=top_k * 3, rerank_top_k=min(top_k * 10, 80))
+                collection, vec, q, top_k=top_k * 3,
+                rerank_top_k=min(top_k * 10, 80), expr=expr)
             all_lists.append(results)
         except Exception as e:
             logger.warning("hybrid_search 失败: {}，降级 dense", e)
-            results = await milvus.search(collection, vec, top_k=top_k * 3)
+            results = await milvus.search(collection, vec, top_k=top_k * 3, expr=expr)
             all_lists.append(results)
 
     # RRF 多路合并
@@ -76,6 +80,17 @@ async def retrieval_pipeline(
     logger.info("检索完成 q={} results={} hybrid={} hyde={} reranker={}",
                 query[:40], len(merged), hybrid, enable_hyde, bool(reranker))
     return merged[:top_k]
+
+
+def _build_milvus_expr(filters: dict) -> str | None:
+    clauses = []
+    for key in ("group", "parent_group", "child_group"):
+        value = str(filters.get(key) or "").strip()
+        if not value:
+            continue
+        escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+        clauses.append(f'{key} == "{escaped}"')
+    return " && ".join(clauses) if clauses else None
 
 
 def _rrf_fuse(lists: list[list[dict]], top_k: int) -> list[dict]:

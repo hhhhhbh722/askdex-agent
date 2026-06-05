@@ -30,6 +30,7 @@ class ShortTermMemory:
         llm: Any,
         window_size: int = 20,
         max_tokens: int = 4000,
+        ttl_seconds: int = 7 * 24 * 60 * 60,
     ) -> None:
         """
         :param redis_client: ``redis.asyncio.Redis`` 实例
@@ -41,6 +42,7 @@ class ShortTermMemory:
         self._llm = llm
         self.window_size = window_size
         self.max_tokens = max_tokens
+        self.ttl_seconds = ttl_seconds
         self._key_prefix = "stm:session:"
         try:
             self._encoding = tiktoken.get_encoding("cl100k_base")
@@ -49,6 +51,14 @@ class ShortTermMemory:
 
     def _key(self, session_id: str) -> str:
         return f"{self._key_prefix}{session_id}"
+
+    async def _refresh_ttl(self, key: str) -> None:
+        if self.ttl_seconds <= 0:
+            return
+        try:
+            await self._redis.expire(key, self.ttl_seconds)
+        except Exception as e:
+            logger.warning("Redis EXPIRE 失败 key={} ttl={} err={}", key, self.ttl_seconds, e)
 
     def _count_tokens(self, text: str) -> int:
         """估算 token 数。"""
@@ -97,6 +107,7 @@ class ShortTermMemory:
         key = self._key(session_id)
         try:
             await self._redis.rpush(key, self._serialize(message))
+            await self._refresh_ttl(key)
         except Exception as e:
             logger.exception("Redis RPUSH 失败: {}", e)
             raise RuntimeError(f"写入短期记忆失败: {e}") from e
@@ -140,6 +151,7 @@ class ShortTermMemory:
             combined = [summary_msg, *tail]
             for m in combined:
                 await self._redis.rpush(key, self._serialize(m))
+            await self._refresh_ttl(key)
         except Exception as e:
             logger.exception("压缩重写 Redis 列表失败: {}", e)
             raise RuntimeError(f"记忆压缩失败: {e}") from e

@@ -52,6 +52,16 @@ class IntentRecognizer:
     def _score_branch(self, query: str) -> tuple[str, str | None, float, str]:
         """返回 (根意图, 子意图, 置信度, 理由)。"""
         q = query.strip().lower()
+        if re.search(r"\d+\s*[-+*/%^]\s*\d+", q) or any(
+            word in q for word in ("计算", "等于", "加", "减", "乘", "除", "平方", "开方")
+        ):
+            return "任务", "计算", 0.9, "命中数学表达式或计算关键词"
+        if any(word in q for word in ("搜索", "查一下", "帮我找", "search")):
+            return "任务", "搜索", 0.85, "命中搜索关键词"
+        if any(word in q for word in ("sql", "数据库", "统计", "查询表")):
+            return "任务", "数据库", 0.85, "命中数据库查询关键词"
+        if any(word in q for word in ("知识库", "文档", "资料里", "已上传")):
+            return "问答", "知识问答", 0.85, "命中知识库关键词"
         best_root = "未知"
         best_child: str | None = None
         best_hits = 0
