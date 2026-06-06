@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, JSON
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, JSON, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -148,4 +148,104 @@ class TraceLog(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=datetime.utcnow,
+    )
+
+
+class KGEntity(Base):
+    """轻量知识图谱实体表。"""
+
+    __tablename__ = "kg_entities"
+    __table_args__ = (
+        UniqueConstraint("type", "normalized_name", name="uq_kg_entity_type_name"),
+    )
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        primary_key=True,
+        default=_uuid,
+    )
+    name: Mapped[str] = mapped_column(String(512), index=True)
+    normalized_name: Mapped[str] = mapped_column(String(512), index=True)
+    type: Mapped[str] = mapped_column(String(64), index=True)
+    properties: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    source_document_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("documents.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=datetime.utcnow,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
+
+    outgoing_relations: Mapped[list["KGRelation"]] = relationship(
+        foreign_keys="KGRelation.subject_id",
+        back_populates="subject",
+        cascade="all, delete-orphan",
+    )
+    incoming_relations: Mapped[list["KGRelation"]] = relationship(
+        foreign_keys="KGRelation.object_id",
+        back_populates="object",
+    )
+
+
+class KGRelation(Base):
+    """轻量知识图谱关系表：主体 - 谓词 - 客体/值。"""
+
+    __tablename__ = "kg_relations"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        primary_key=True,
+        default=_uuid,
+    )
+    subject_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("kg_entities.id", ondelete="CASCADE"),
+        index=True,
+    )
+    predicate: Mapped[str] = mapped_column(String(128), index=True)
+    object_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("kg_entities.id", ondelete="CASCADE"),
+        index=True,
+        nullable=True,
+    )
+    value_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    value_number: Mapped[float | None] = mapped_column(Float, nullable=True)
+    value_min: Mapped[float | None] = mapped_column(Float, nullable=True)
+    value_max: Mapped[float | None] = mapped_column(Float, nullable=True)
+    properties: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    source_document_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("documents.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
+    )
+    source_chunk_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("document_chunks.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
+    )
+    confidence: Mapped[float] = mapped_column(Float, default=1.0)
+    extractor: Mapped[str] = mapped_column(String(64), default="rule")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=datetime.utcnow,
+    )
+
+    subject: Mapped[KGEntity] = relationship(
+        foreign_keys=[subject_id],
+        back_populates="outgoing_relations",
+    )
+    object: Mapped[KGEntity | None] = relationship(
+        foreign_keys=[object_id],
+        back_populates="incoming_relations",
     )

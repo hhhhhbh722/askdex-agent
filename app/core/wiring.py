@@ -79,7 +79,7 @@ def init_redis(settings) -> any:
 # ---- RAG 检索 ----
 
 async def rag_search(query: str, top_k: int = 5, filters: dict | None = None) -> list[dict]:
-    """完整的检索流水线：Query增强 → 混合检索 → Reranker精排。"""
+    """GraphRAG 检索：KG 事实召回 + Milvus/BM25 混合检索 + RRF 融合。"""
     emb = _state.get("embedding")
     milvus = _state.get("milvus")
     if not emb or not milvus: return []
@@ -89,12 +89,55 @@ async def rag_search(query: str, top_k: int = 5, filters: dict | None = None) ->
     llm = _state.get("agent_llm")
     reranker = _state.get("reranker")
 
-    return await retrieval_pipeline(
+    vector_results = await retrieval_pipeline(
         query=query, embedding=emb, milvus=milvus,
         collection=s.milvus_collection_name, llm=llm,
         reranker=reranker, top_k=top_k, hybrid=True,
         enable_hyde=True, filters=filters,
     )
+    kg_results = await _kg_context_search(query, top_k=top_k, filters=filters)
+    return _fuse_retrieval_results([kg_results, vector_results], top_k=top_k)
+
+
+async def _kg_context_search(query: str, top_k: int, filters: dict | None = None) -> list[dict]:
+    """查询 PostgreSQL KG。filters 暂只用于保持接口兼容，KG 来源由 document meta 约束。"""
+    _ = filters
+    try:
+        from app.core.kg.service import retrieve_kg_context
+        from app.infrastructure.database import session as db_session
+        if db_session.async_session_factory is None:
+            return []
+        async with db_session.async_session_factory() as session:
+            return await retrieve_kg_context(session, query=query, top_k=top_k)
+    except Exception as exc:
+        logger.warning("KG 检索失败，跳过图谱分支: {}", exc)
+        return []
+
+
+def _fuse_retrieval_results(lists: list[list[dict]], top_k: int) -> list[dict]:
+    """用 RRF 融合 KG 与 BM25/向量结果，避免任何一路独占答案。"""
+    scores: dict[str, float] = {}
+    best: dict[str, dict] = {}
+    k = 60
+    for weight, results in ((1.25, lists[0] if lists else []), (1.0, lists[1] if len(lists) > 1 else [])):
+        for rank, item in enumerate(results or []):
+            rid = str(item.get("document_id") or item.get("id"))
+            scores[rid] = scores.get(rid, 0.0) + weight / (k + rank + 1)
+            current = dict(item)
+            current["fusion_sources"] = list(dict.fromkeys(
+                [*(best.get(rid, {}).get("fusion_sources") or []), current.get("retrieval_source") or "vector_bm25"]
+            ))
+            if rid not in best or current.get("score", 0) > best[rid].get("score", 0):
+                best[rid] = current
+
+    ranked = sorted(scores, key=lambda rid: scores[rid], reverse=True)[:top_k]
+    out: list[dict] = []
+    for rid in ranked:
+        item = best[rid]
+        item["rrf_score"] = scores[rid]
+        item["score"] = max(float(item.get("score") or 0), min(1.0, scores[rid] * 20))
+        out.append(item)
+    return out
 
 
 # ---- ETL → Milvus ----
@@ -183,7 +226,7 @@ def build_agent(settings, embedding, milvus, redis):
     _state["agent_llm"] = adapter
 
     # 工具
-    tools = ToolRegistry()
+    tools = ToolRegistry(timeout_seconds=90.0)
     tools.register(CalculatorTool())
     tools.register(WebSearchTool())
     tools.register(_KBTool(embedding, milvus))  # 知识库检索工具
@@ -233,7 +276,7 @@ class _KBTool:
     async def execute(self, **kwargs):
         q = str(kwargs.get("query", "") or kwargs.get("expression", ""))
         if not q: return "请提供 query 参数"
-        results = await rag_search(q, top_k=3)
+        results = await rag_search(q, top_k=5)
         if not results: return "知识库中未找到相关内容"
         lines = []
         for i, r in enumerate(results, 1):

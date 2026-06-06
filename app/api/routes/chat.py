@@ -13,12 +13,10 @@ from loguru import logger
 from openai import AsyncOpenAI
 
 from app.config import get_settings
-from app.core.intent.recognizer import IntentRecognizer
 from app.core.wiring import get_state, rag_search
 from app.models.schemas import ChatRequest, ChatResponse
 
 router = APIRouter(tags=["chat"])
-_intent = IntentRecognizer()
 
 # 内存统计
 _stats = {"total_requests": 0, "total_tokens": 0, "prompt_tokens": 0, "completion_tokens": 0, "traces": []}
@@ -48,37 +46,23 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
     user_text = request.messages[-1].content if request.messages else ""
     started = time.perf_counter()
-    intent_result = await _intent.recognize(
-        user_text,
-        context={"messages": [m.model_dump() for m in request.messages[-6:]]},
-    )
-    clarify = await _intent.clarify(user_text, intent_result)
-    if clarify and len(user_text.strip()) < 12:
-        return ChatResponse(
-            id=str(uuid.uuid4()),
-            model=settings.openai_model,
-            content=clarify,
-            steps=[{"phase": "intent", "status": "clarify", "intent": intent_result.model_dump()}],
-            mode="clarify",
-        )
 
     # 直接调 LLM（Agent 在后台处理工具调用）
     agent = get_state().get("agent")
     if agent:
         try:
             from app.core.agent.orchestrator import AgentResponse, IntentContext
-            allowed_tools = _allowed_tools_for_intent(intent_result)
-            preferred_mode = request.mode or _mode_for_intent(intent_result)
+            preferred_mode = request.mode or "react"
             resp = await agent.run(
                 user_text,
                 session_id=request.conversation_id or str(uuid.uuid4()),
                 mode=preferred_mode,
                 intent=IntentContext(
-                    intent=intent_result.intent,
-                    confidence=intent_result.confidence,
-                    slots={**intent_result.slots, "sub_intent": intent_result.sub_intent},
+                    intent="general",
+                    confidence=1.0,
+                    slots={},
                     preferred_mode=preferred_mode,
-                    allowed_tools=allowed_tools,
+                    allowed_tools=None,
                 ),
             )
             if isinstance(resp, AgentResponse):
@@ -113,30 +97,6 @@ async def chat(request: ChatRequest) -> ChatResponse:
                         usage={"prompt_tokens": resp.usage.prompt_tokens if resp.usage else 0,
                                "completion_tokens": resp.usage.completion_tokens if resp.usage else 0,
                                "total_tokens": resp.usage.total_tokens if resp.usage else 0})
-
-
-def _allowed_tools_for_intent(intent_result) -> list[str] | None:
-    sub = str(intent_result.sub_intent or "")
-    intent = str(intent_result.intent or "")
-    if "计算" in sub:
-        return ["calculator"]
-    if "搜索" in sub:
-        return ["web_search"]
-    if "数据" in sub or "sql" in sub.lower():
-        return ["database_query"]
-    if "知识" in sub or "问答" in intent:
-        return ["knowledge_base", "calculator"]
-    if "闲聊" in sub:
-        return []
-    return None
-
-
-def _mode_for_intent(intent_result) -> str:
-    sub = str(intent_result.sub_intent or "")
-    intent = str(intent_result.intent or "")
-    if "任务" in intent or "数据" in sub:
-        return "plan_execute"
-    return "react"
 
 
 def _record_agent_trace(
