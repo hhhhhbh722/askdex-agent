@@ -1,0 +1,325 @@
+{
+  "name": "demo-testset",
+  "version": "1.0",
+  "description": "从 agent_knowledge 集合自动生成，采样 10 片段，共 20 条用例",
+  "created_at": "2026-06-07T15:31:46.076218",
+  "test_cases": [
+    {
+      "query": "晶石蜗需要满足什么条件才能进化？",
+      "ground_truth_contexts": [],
+      "ground_truth_answer": "撞击任意三种矿石各三次。",
+      "relevant_ids": [
+        "fcc16b21-0e62-43cf-8fe9-3a0a5e507fbb"
+      ],
+      "key_facts": [
+        "进化条件: 撞击任意三种矿石各三次",
+        "罕见的矿石精灵之一，外壳酷似烧蓝黄金。"
+      ],
+      "metadata": {
+        "source_chunk_id": "fcc16b21-0e62-43cf-8fe9-3a0a5e507fbb",
+        "generation_method": "llm_auto"
+      }
+    },
+    {
+      "query": "晶石蜗的特性效果是什么？",
+      "ground_truth_contexts": [],
+      "ground_truth_answer": "受到自己携带技能系别的攻击伤害-40%。",
+      "relevant_ids": [
+        "fcc16b21-0e62-43cf-8fe9-3a0a5e507fbb"
+      ],
+      "key_facts": [
+        "特性描述: 受到自己携带技能系别的攻击伤害-40%。",
+        "采矿队也会把废弃的金属零件丢给它们，它们会帮忙咬掉表层锈斑。"
+      ],
+      "metadata": {
+        "source_chunk_id": "fcc16b21-0e62-43cf-8fe9-3a0a5e507fbb",
+        "generation_method": "llm_auto"
+      }
+    },
+    {
+      "query": "溯源钟的精灵属性是什么？",
+      "ground_truth_contexts": [],
+      "ground_truth_answer": "溯源钟的主属性是机械，第二属性是幻。",
+      "relevant_ids": [
+        "15e4cd6b-30ae-4462-b8e9-2123b7ad125b"
+      ],
+      "key_facts": [
+        "实际拥有少量扭转时间的能量",
+        "炸弹一旦爆炸，会短暂扭曲周围的小范围时间，让追逐者的动作变迟缓。"
+      ],
+      "metadata": {
+        "source_chunk_id": "15e4cd6b-30ae-4462-b8e9-2123b7ad125b",
+        "generation_method": "llm_auto"
+      }
+    },
+    {
+      "query": "根据精灵描述，溯源钟有什么独特的能力？",
+      "ground_truth_contexts": [],
+      "ground_truth_answer": "溯源钟拥有少量扭转时间的能量，会边发出“布谷”的声音边从嘴里弹出时间炸弹，炸弹爆炸后会短暂扭曲周围的时间，让追逐者的动作变迟缓。",
+      "relevant_ids": [
+        "15e4cd6b-30ae-4462-b8e9-2123b7ad125b"
+      ],
+      "key_facts": [
+        "实际拥有少量扭转时间的能量",
+        "炸弹一旦爆炸，会短暂扭曲周围的小范围时间，让追逐者的动作变迟缓。"
+      ],
+      "metadata": {
+        "source_chunk_id": "15e4cd6b-30ae-4462-b8e9-2123b7ad125b",
+        "generation_method": "llm_auto"
+      }
+    },
+    {
+      "query": "墨鱿士的特性效果是什么？",
+      "ground_truth_contexts": [],
+      "ground_truth_answer": "使用非本系技能时威力+50%。",
+      "relevant_ids": [
+        "060d9eda-a919-4e70-a3f8-149c71ebd20e"
+      ],
+      "key_facts": [
+        "使用非本系技能时威力+50%。",
+        "不同于章鱼精灵，它们因为蕴含幽系能量，皮肤已经褪成苍白的颜色，头足里面藏着墨囊，装着它们收集来的颜料。"
+      ],
+      "metadata": {
+        "source_chunk_id": "060d9eda-a919-4e70-a3f8-149c71ebd20e",
+        "generation_method": "llm_auto"
+      }
+    },
+    {
+      "query": "墨鱿士的生命值和物防值分别是多少？",
+      "ground_truth_contexts": [],
+      "ground_truth_answer": "生命: 103，物防: 105。",
+      "relevant_ids": [
+        "060d9eda-a919-4e70-a3f8-149c71ebd20e"
+      ],
+      "key_facts": [
+        "生命: 103",
+        "物防: 105"
+      ],
+      "metadata": {
+        "source_chunk_id": "060d9eda-a919-4e70-a3f8-149c71ebd20e",
+        "generation_method": "llm_auto"
+      }
+    },
+    {
+      "query": "仪式巨像的特性效果是什么？",
+      "ground_truth_contexts": [],
+      "ground_truth_answer": "敌方每有1层星陨印记，自己的地系技能威力+15%。",
+      "relevant_ids": [
+        "c6a557e0-3920-47ea-8297-977a525785ea"
+      ],
+      "key_facts": [
+        "敌方每有1层星陨印记，自己的地系技能威力+15%。"
+      ],
+      "metadata": {
+        "source_chunk_id": "c6a557e0-3920-47ea-8297-977a525785ea",
+        "generation_method": "llm_auto"
+      }
+    },
+    {
+      "query": "仪式巨像的精灵描述中出现了哪一句关于生命与文明传承的话？",
+      "ground_truth_contexts": [],
+      "ground_truth_answer": "“也许生命会消失，从人们的记忆中淡忘，但文明的传承不会断绝。”",
+      "relevant_ids": [
+        "c6a557e0-3920-47ea-8297-977a525785ea"
+      ],
+      "key_facts": [
+        "也许生命会消失，从人们的记忆中淡忘，但文明的传承不会断绝。"
+      ],
+      "metadata": {
+        "source_chunk_id": "c6a557e0-3920-47ea-8297-977a525785ea",
+        "generation_method": "llm_auto"
+      }
+    },
+    {
+      "query": "风滚暮虫的特性效果是什么？它自身拥有哪些技能可以与该特性配合？",
+      "ground_truth_contexts": [],
+      "ground_truth_answer": "特性效果是携带的【虫鸣】技能威力+20。风滚暮虫掌握的技能中包含虫鸣，此外还有虫网、聒噪、拍击、防御、假寐、摇篮曲、音波弹、虫蛊、魔能爆、触底强击、追打等。",
+      "relevant_ids": [
+        "c0c3dca7-c930-4a5f-a6f9-eb65e248cd95"
+      ],
+      "key_facts": [
+        "特性描述: 携带的【虫鸣】技能威力+20。",
+        "技能: 虫网,聒噪,拍击,防御,假寐,虫鸣,摇篮曲,音波弹,虫蛊,魔能爆,触底强击,追打"
+      ],
+      "metadata": {
+        "source_chunk_id": "c0c3dca7-c930-4a5f-a6f9-eb65e248cd95",
+        "generation_method": "llm_auto"
+      }
+    },
+    {
+      "query": "风滚暮虫在自然环境中如何移动和停歇？它对其他精灵的态度怎样？",
+      "ground_truth_contexts": [],
+      "ground_truth_answer": "风滚暮虫借风而行，利用风把自己带离原地，遇到水面或湿润区域就停下来休息。它性情温和，对精灵的幼年体都照顾有加，因此与不少精灵能维持友好的关系。",
+      "relevant_ids": [
+        "c0c3dca7-c930-4a5f-a6f9-eb65e248cd95"
+      ],
+      "key_facts": [
+        "借风而行的精灵，利用风把自己带离原地，遇到水面或湿润区域就停下来休息。",
+        "性情温和，对精灵的幼年体都照顾有加，因此与不少精灵能维持友好的关系。"
+      ],
+      "metadata": {
+        "source_chunk_id": "c0c3dca7-c930-4a5f-a6f9-eb65e248cd95",
+        "generation_method": "llm_auto"
+      }
+    },
+    {
+      "query": "加油蟹的属性是什么？它的特性描述是什么？",
+      "ground_truth_contexts": [],
+      "ground_truth_answer": "加油蟹的属性是水和萌。特性描述：若自己在萌化状态下再获得萌化会解除萌化。",
+      "relevant_ids": [
+        "5811eaa8-9f41-4fcb-8690-b3d98656d8da"
+      ],
+      "key_facts": [
+        "属性: 水",
+        "特性描述: 若自己在萌化状态下再获得萌化会解除萌化。"
+      ],
+      "metadata": {
+        "source_chunk_id": "5811eaa8-9f41-4fcb-8690-b3d98656d8da",
+        "generation_method": "llm_auto"
+      }
+    },
+    {
+      "query": "加油蟹的精灵描述是什么？它和哪种精灵有共生关系？",
+      "ground_truth_contexts": [],
+      "ground_truth_answer": "精灵描述：加油海葵放弃了锤炼自己变得更强这一进化手段，它们和加油蟹一起构建出特殊的共生关系。这个世界足够宽容，小小精灵不必努力变得更强大，只要健康快乐就好。与加油海葵有共生关系。",
+      "relevant_ids": [
+        "5811eaa8-9f41-4fcb-8690-b3d98656d8da"
+      ],
+      "key_facts": [
+        "加油海葵放弃了锤炼自己变得更强这一进化手段，它们和加油蟹一起构建出特殊的共生关系。",
+        "这个世界足够宽容，小小精灵不必努力变得更强大，只要健康快乐就好。"
+      ],
+      "metadata": {
+        "source_chunk_id": "5811eaa8-9f41-4fcb-8690-b3d98656d8da",
+        "generation_method": "llm_auto"
+      }
+    },
+    {
+      "query": "瑰眼仔的属性是什么？它的生命值和攻击能力如何？",
+      "ground_truth_contexts": [],
+      "ground_truth_answer": "瑰眼仔的属性是恶和虫。生命值为110，物攻69，魔攻71。",
+      "relevant_ids": [
+        "381f82f3-a219-4db8-8e75-ec6865284097"
+      ],
+      "key_facts": [
+        "属性: 恶",
+        "属性: 虫"
+      ],
+      "metadata": {
+        "source_chunk_id": "381f82f3-a219-4db8-8e75-ec6865284097",
+        "generation_method": "llm_auto"
+      }
+    },
+    {
+      "query": "瑰眼仔额头上第三只眼睛的作用是什么？使用它时有什么要求？",
+      "ground_truth_contexts": [],
+      "ground_truth_answer": "额头上第三只眼睛用来探测魔法能量的痕迹，使用时需要放空所有杂念。",
+      "relevant_ids": [
+        "381f82f3-a219-4db8-8e75-ec6865284097"
+      ],
+      "key_facts": [
+        "总是缩在某个角落里不知道在想些什么，看似脑袋空空双眼无神，一副呆呆的样子。",
+        "额头上第三只眼睛不是用来作为视觉器官，而是用来探测魔法能量的痕迹，使用时需要放空所有杂念。"
+      ],
+      "metadata": {
+        "source_chunk_id": "381f82f3-a219-4db8-8e75-ec6865284097",
+        "generation_method": "llm_auto"
+      }
+    },
+    {
+      "query": "小丑兔的特性是什么？请解释其效果。",
+      "ground_truth_contexts": [],
+      "ground_truth_answer": "小丑兔的特性是：自己回复生命变为敌方扣除等量生命。这意味着当小丑兔原本会回复生命时，该回复效果会转化为对敌方造成等量的生命扣除。",
+      "relevant_ids": [
+        "fa4cd112-66b3-45a8-a7bc-e64c52b5c86c"
+      ],
+      "key_facts": [
+        "特性描述: 自己回复生命变为敌方扣除等量生命。"
+      ],
+      "metadata": {
+        "source_chunk_id": "fa4cd112-66b3-45a8-a7bc-e64c52b5c86c",
+        "generation_method": "llm_auto"
+      }
+    },
+    {
+      "query": "小丑兔的身高体重范围是多少？精灵描述中它有什么特点？",
+      "ground_truth_contexts": [],
+      "ground_truth_answer": "小丑兔的身高在0.78~0.96之间，体重在11.75~14.75之间。精灵描述：仍然有些闲不住，但它正在学着克制，想蹦的时候就抛球，把冲动转化到了抛球中。不过偶尔还是会忍不住，球抛着抛着身体就跟着飞了出去。",
+      "relevant_ids": [
+        "fa4cd112-66b3-45a8-a7bc-e64c52b5c86c"
+      ],
+      "key_facts": [
+        "仍然有些闲不住，但它正在学着克制，想蹦的时候就抛球，把冲动转化到了抛球中。"
+      ],
+      "metadata": {
+        "source_chunk_id": "fa4cd112-66b3-45a8-a7bc-e64c52b5c86c",
+        "generation_method": "llm_auto"
+      }
+    },
+    {
+      "query": "画间沉铁兽的特性是什么？该特性如何发挥作用？",
+      "ground_truth_contexts": [],
+      "ground_truth_answer": "画间沉铁兽的特性是：攻击时，敌方每有1层增益，本次技能威力+10%。",
+      "relevant_ids": [
+        "f164a668-8f2e-4d8a-989c-0f9d4029f1a4"
+      ],
+      "key_facts": [
+        "特性描述: 攻击时，敌方每有1层增益，本次技能威力+10%。",
+        "进化条件: 击败三只幻系精灵"
+      ],
+      "metadata": {
+        "source_chunk_id": "f164a668-8f2e-4d8a-989c-0f9d4029f1a4",
+        "generation_method": "llm_auto"
+      }
+    },
+    {
+      "query": "画间沉铁兽需要满足什么条件才能进化？",
+      "ground_truth_contexts": [],
+      "ground_truth_answer": "需要击败三只幻系精灵。",
+      "relevant_ids": [
+        "f164a668-8f2e-4d8a-989c-0f9d4029f1a4"
+      ],
+      "key_facts": [
+        "进化条件: 击败三只幻系精灵",
+        "属性: 普通 属性: 武"
+      ],
+      "metadata": {
+        "source_chunk_id": "f164a668-8f2e-4d8a-989c-0f9d4029f1a4",
+        "generation_method": "llm_auto"
+      }
+    },
+    {
+      "query": "混乱鱿彩的特性效果是什么？",
+      "ground_truth_contexts": [],
+      "ground_truth_answer": "混乱鱿彩的特性效果是使用非本系技能时威力+50%。",
+      "relevant_ids": [
+        "f35ab4fe-e765-466d-93cb-14d03a6d5a84"
+      ],
+      "key_facts": [
+        "特性描述: 使用非本系技能时威力+50%。",
+        "属性: 幽 属性: 恶"
+      ],
+      "metadata": {
+        "source_chunk_id": "f35ab4fe-e765-466d-93cb-14d03a6d5a84",
+        "generation_method": "llm_auto"
+      }
+    },
+    {
+      "query": "混乱鱿彩的生命值、物攻和物防种族值分别是多少？",
+      "ground_truth_contexts": [],
+      "ground_truth_answer": "混乱鱿彩的生命值为129，物攻为105，物防为131。",
+      "relevant_ids": [
+        "f35ab4fe-e765-466d-93cb-14d03a6d5a84"
+      ],
+      "key_facts": [
+        "生命: 129",
+        "物攻: 105",
+        "物防: 131"
+      ],
+      "metadata": {
+        "source_chunk_id": "f35ab4fe-e765-466d-93cb-14d03a6d5a84",
+        "generation_method": "llm_auto"
+      }
+    }
+  ]
+}

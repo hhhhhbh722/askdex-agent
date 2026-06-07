@@ -175,11 +175,11 @@ class MilvusManager:
         def _search():
             col = Collection(collection, using=self._alias); col.load()
 
-            # 密集向量请求
+            # 密集向量请求（pymilvus 3.0: expr 需在 AnnSearchRequest 上设置）
             dense_req = AnnSearchRequest(
                 data=[query_vector], anns_field="embedding",
                 param={"metric_type": "COSINE", "params": {"nprobe": 16}},
-                limit=rerank_top_k)
+                limit=rerank_top_k, expr=expr)
 
             # 稀疏关键词请求
             sparse_query = _sparse_vector(query_text)
@@ -191,12 +191,12 @@ class MilvusManager:
                     output_fields=["id", "content", "source", "group", "parent_group", "child_group"]))
             sparse_req = AnnSearchRequest(
                 data=[sparse_query], anns_field=_CONTENT_SPARSE,
-                param={"metric_type": "IP"}, limit=rerank_top_k)
+                param={"metric_type": "IP"}, limit=rerank_top_k, expr=expr)
 
             ranker = WeightedRanker(vector_weight, bm25_weight)
             res = col.hybrid_search(
                 reqs=[dense_req, sparse_req], rerank=ranker,
-                limit=top_k, expr=expr,
+                limit=top_k,
                 output_fields=["id", "content", "source", "group", "parent_group", "child_group"])
             return _parse_hits(res)
 

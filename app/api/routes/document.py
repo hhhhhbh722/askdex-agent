@@ -526,6 +526,232 @@ async def list_docs(session: AsyncSession = Depends(get_async_session)) -> list[
     return docs
 
 
+# ======================================================================
+# RAGAS 评估端点（新增）
+# ======================================================================
+
+from pydantic import BaseModel, Field
+
+
+class GenerateTestSetRequest(BaseModel):
+    """测试集自动生成请求。"""
+    sample_size: int = Field(default=50, ge=5, le=500, description="采样文档片段数")
+    questions_per_chunk: int = Field(default=2, ge=1, le=5, description="每个片段生成的问题数")
+    collection: str = Field(default="agent_knowledge", description="Milvus 集合名")
+    testset_name: str = Field(default="", description="数据集名称（留空自动生成）")
+
+
+class RunRagasEvalRequest(BaseModel):
+    """RAGAS 完整评估请求。"""
+    testset_path: str = Field(default="", description="测试集 JSON 文件路径")
+    eval_mode: str = Field(default="full", description="评估模式：full / retrieval_only / generation_only")
+    top_k: int = Field(default=5, ge=1, le=20, description="检索返回数")
+
+
+@router.post("/evaluate/testset/generate")
+async def generate_testset(req: GenerateTestSetRequest) -> dict:
+    """
+    从知识库自动生成 RAGAS 评测数据集。
+
+    从 Milvus 随机采样文档片段，用 LLM 为每个片段生成 (问题, 答案, 关键事实)，
+    导出为 JSON 文件供人工抽检后使用。
+    """
+    from app.core.evaluation.llm_judge import LLMJudge
+    from app.core.evaluation.testset import EvalTestSet, TestSetGenerator
+    from app.core.wiring import get_state
+
+    state = get_state()
+    milvus = state.get("milvus")
+    emb = state.get("embedding")
+    llm = state.get("agent_llm")
+
+    if not milvus:
+        raise HTTPException(status_code=503, detail="Milvus 未就绪，无法采样文档")
+
+    judge = LLMJudge(llm=llm)
+    generator = TestSetGenerator(llm=llm, milvus=milvus, embedding=emb)
+
+    try:
+        testset = await generator.generate(
+            sample_size=req.sample_size,
+            questions_per_chunk=req.questions_per_chunk,
+            collection=req.collection,
+            testset_name=req.testset_name,
+        )
+    except Exception as exc:
+        logger.exception("测试集生成失败")
+        raise HTTPException(status_code=500, detail=f"测试集生成失败: {exc}") from exc
+
+    # 保存到文件
+    from app.config import get_settings
+    settings = get_settings()
+    report_dir = Path(settings.eval_report_dir)
+    filename = f"testset_{testset.name.replace(' ', '_')}.json"
+    output_path = report_dir / filename
+    testset.to_json(output_path)
+
+    return {
+        "status": "ok",
+        "testset_name": testset.name,
+        "test_cases_count": len(testset),
+        "output_path": str(output_path),
+        "sample_queries": [tc.query[:80] for tc in testset.test_cases[:5]],
+    }
+
+
+@router.post("/evaluate/ragas")
+async def run_ragas_evaluation(req: RunRagasEvalRequest) -> dict:
+    """
+    运行完整的 RAGAS 评估。
+
+    根据测试集文件执行检索→生成→评分全流程，输出评估报告。
+    """
+    from app.config import get_settings
+    from app.core.evaluation.llm_judge import LLMJudge
+    from app.core.evaluation.ragas_metrics import evaluate_retrieval_batch
+    from app.core.evaluation.runner import RAGEvalRunner
+    from app.core.evaluation.testset import EvalTestSet
+    from app.core.wiring import get_state
+
+    # 加载测试集
+    settings = get_settings()
+    testset_path = req.testset_path or str(
+        Path(settings.eval_report_dir) / "eval_testset.json"
+    )
+
+    if not Path(testset_path).exists():
+        # 尝试列出可用的测试集
+        available = list(Path(settings.eval_report_dir).glob("testset_*.json"))
+        raise HTTPException(
+            status_code=404,
+            detail=f"测试集不存在: {testset_path}。可用测试集: {[p.name for p in available]}",
+        )
+
+    testset = EvalTestSet.from_json(testset_path)
+
+    # 准备 runner
+    state = get_state()
+    llm = state.get("agent_llm")
+    emb = state.get("embedding")
+
+    judge = LLMJudge(
+        llm=llm,
+        max_retries=settings.eval_llm_max_retries,
+    )
+
+    async def _retrieve(query: str) -> list[dict]:
+        """适配 rag_search → runner 期望的检索接口。"""
+        results = await rag_search(query, top_k=req.top_k)
+        return results
+
+    async def _generate(query: str, contexts: list[str]) -> str:
+        """适配现有 LLM → runner 期望的生成接口。"""
+        if llm is None:
+            return ""
+        # 构建 prompt
+        ctx_block = "\n\n".join(
+            f"[{i+1}] {ctx[:300]}" for i, ctx in enumerate(contexts[:5])
+        )
+        prompt = (
+            "你是严谨的知识助手。仅根据提供的上下文作答。\n\n"
+            f"上下文：\n{ctx_block}\n\n"
+            f"用户问题：{query}\n\n"
+            "请基于上下文回答："
+        )
+        try:
+            resp = await llm.acomplete([{"role": "user", "content": prompt}], temperature=0.0)
+            return resp.strip() if isinstance(resp, str) else str(resp)
+        except Exception:
+            return ""
+
+    runner = RAGEvalRunner(
+        judge=judge,
+        retrieve_fn=_retrieve if req.eval_mode in ("full", "retrieval_only") else None,
+        generate_fn=_generate if req.eval_mode in ("full", "generation_only") else None,
+        embedding=emb,
+        max_concurrency=settings.eval_max_concurrency,
+    )
+
+    # 执行评估
+    try:
+        if req.eval_mode == "retrieval_only":
+            report = await runner.run_retrieval_eval(testset)
+        elif req.eval_mode == "generation_only":
+            report = await runner.run_generation_eval(testset)
+        else:
+            report = await runner.run_full(testset)
+    except Exception as exc:
+        logger.exception("RAGAS 评估执行失败")
+        raise HTTPException(status_code=500, detail=f"评估执行失败: {exc}") from exc
+
+    # 保存报告
+    report_dir = Path(settings.eval_report_dir)
+    report_file = report_dir / f"ragas_report_{report.run_at.replace(':', '-')}.json"
+    report.to_json(report_file)
+
+    return {
+        "status": "ok",
+        "eval_mode": req.eval_mode,
+        "testset_name": testset.name,
+        "total_cases": len(report.per_query),
+        "error_count": report.error_count,
+        "overall_score": round(report.overall_score, 4),
+        "summary": report.summary,
+        "report_path": str(report_file),
+    }
+
+
+@router.get("/evaluate/history")
+async def list_eval_reports() -> dict:
+    """
+    列出所有历史评估报告。
+    """
+    from app.config import get_settings
+    settings = get_settings()
+    report_dir = Path(settings.eval_report_dir)
+
+    if not report_dir.exists():
+        return {"reports": [], "test_sets": []}
+
+    reports = sorted(
+        [p.name for p in report_dir.glob("ragas_report_*.json")],
+        reverse=True,
+    )[:20]
+    test_sets = sorted(
+        [p.name for p in report_dir.glob("testset_*.json")],
+        reverse=True,
+    )[:20]
+
+    return {
+        "reports": reports,
+        "test_sets": test_sets,
+        "report_dir": str(report_dir),
+    }
+
+
+@router.get("/evaluate/report/{filename}")
+async def get_eval_report(filename: str) -> dict:
+    """
+    获取指定评估报告的详细内容。
+    """
+    from app.config import get_settings
+    from app.core.evaluation.reporter import EvalReport
+
+    settings = get_settings()
+    report_path = Path(settings.eval_report_dir) / filename
+
+    if not report_path.exists():
+        raise HTTPException(status_code=404, detail=f"报告不存在: {filename}")
+
+    try:
+        report = EvalReport.from_json(report_path)
+        return report.to_dict()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"报告加载失败: {exc}"
+        ) from exc
+
+
 def _failed_upload_result(
     filename: str,
     group: str,

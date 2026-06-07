@@ -54,6 +54,28 @@ class Settings(BaseSettings):
 
     log_level: str = Field(default="INFO", description="日志级别")
 
+    # ---- RAGAS 评估配置 ----
+    eval_llm_model: str = Field(
+        default="",
+        description="评估专用模型名（留空则复用 openai_model）",
+    )
+    eval_llm_temperature: float = Field(
+        default=0.0,
+        description="评估 LLM 调用温度（0=确定性输出，保证评分一致性）",
+    )
+    eval_llm_max_retries: int = Field(
+        default=3,
+        description="评估 LLM 调用失败最大重试次数",
+    )
+    eval_max_concurrency: int = Field(
+        default=5,
+        description="评估时并发 LLM 调用的最大数量（控制频率和成本）",
+    )
+    eval_report_dir: str = Field(
+        default="./eval_reports",
+        description="评估报告默认输出目录",
+    )
+
 
 @lru_cache
 def get_settings() -> Settings:
