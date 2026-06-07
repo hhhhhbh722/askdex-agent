@@ -13,7 +13,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_name: str = Field(default="enterprise-ai-agent", description="服务名称")
+    app_name: str = Field(default="askdex-agent", description="服务名称")
     app_env: str = Field(default="development", description="运行环境")
     debug: bool = Field(default=False, description="调试模式")
     api_prefix: str = Field(default="/api/v1", description="API 前缀")
