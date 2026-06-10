@@ -53,7 +53,13 @@ async def retrieval_pipeline(
         except Exception:
             pass
 
-    expr = _build_milvus_expr(filters or {})
+    supported_fields = None
+    if hasattr(milvus, "scalar_fields"):
+        try:
+            supported_fields = await milvus.scalar_fields(collection)
+        except Exception as exc:
+            logger.debug("读取 Milvus schema 失败，按默认字段构建过滤表达式: {}", exc)
+    expr = _build_milvus_expr(filters or {}, supported_fields=supported_fields)
 
     # 3. 每路检索：Dense + BM25 混合搜索
     all_lists: list[list[dict]] = []
@@ -96,14 +102,31 @@ async def retrieval_pipeline(
     return merged[:top_k]
 
 
-def _build_milvus_expr(filters: dict) -> str | None:
+def _build_milvus_expr(filters: dict, supported_fields: set[str] | None = None) -> str | None:
     clauses = []
-    for key in ("group", "parent_group", "child_group"):
+    for key in ("group", "parent_group", "child_group", "source", "entity_name", "normalized_entity_name"):
         value = str(filters.get(key) or "").strip()
         if not value:
             continue
+        if supported_fields is not None and key not in supported_fields:
+            continue
         escaped = value.replace("\\", "\\\\").replace('"', '\\"')
         clauses.append(f'{key} == "{escaped}"')
+    list_filters = {
+        "document_ids": "document_id",
+        "sources": "source",
+        "entity_names": "entity_name",
+        "normalized_entity_names": "normalized_entity_name",
+    }
+    for filter_key, field_name in list_filters.items():
+        values = [str(v).strip() for v in (filters.get(filter_key) or []) if str(v).strip()]
+        if not values:
+            continue
+        if supported_fields is not None and field_name not in supported_fields:
+            continue
+        escaped_values = [v.replace("\\", "\\\\").replace('"', '\\"') for v in values]
+        quoted_values = ", ".join(f'"{value}"' for value in escaped_values)
+        clauses.append(f"{field_name} in [{quoted_values}]")
     return " && ".join(clauses) if clauses else None
 
 

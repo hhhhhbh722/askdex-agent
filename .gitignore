@@ -8,6 +8,8 @@ frontend/node_modules/
 frontend/dist/
 uploads/
 kb_roco_docs/
+eval_reports/
+scripts/
 smw_cache.json
 wt_debug.txt
 *.log

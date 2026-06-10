@@ -11,6 +11,7 @@ from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.kg.extractor import normalize_name
 from app.core.wiring import embed_chunks, get_state
 from app.etl import ETLPipeline
 from app.infrastructure.database import session as db_session
@@ -19,6 +20,7 @@ from app.models.schemas import DocumentGroupUpdate, DocumentInfo, DocumentUpload
 
 _upload_jobs: dict[str, dict[str, Any]] = {}
 _reindex_jobs: dict[str, dict[str, Any]] = {}
+_VECTOR_REQUIRED_FIELDS = {"document_id", "entity_name", "normalized_entity_name"}
 
 
 def get_upload_job(job_id: str) -> dict[str, Any] | None:
@@ -87,6 +89,27 @@ def start_reindex_job() -> dict[str, Any]:
     return {"job_id": job_id, **_reindex_jobs[job_id]}
 
 
+async def vector_schema_status() -> dict[str, Any]:
+    """Inspect Milvus collection fields required by GraphRAG v2."""
+    state = get_state()
+    milvus = state.get("milvus")
+    settings = state.get("settings")
+    if not milvus or not settings:
+        raise RuntimeError("Milvus 未就绪，无法检测 schema")
+    if not hasattr(milvus, "scalar_fields"):
+        raise RuntimeError("当前 Milvus 客户端不支持 schema 检测")
+
+    fields = await milvus.scalar_fields(settings.milvus_collection_name)
+    missing = sorted(_VECTOR_REQUIRED_FIELDS - fields)
+    return {
+        "collection": settings.milvus_collection_name,
+        "fields": sorted(fields),
+        "required_fields": sorted(_VECTOR_REQUIRED_FIELDS),
+        "missing_fields": missing,
+        "needs_recreate": bool(missing),
+    }
+
+
 async def ingest_document_bytes(
     *,
     raw: bytes,
@@ -103,6 +126,7 @@ async def ingest_document_bytes(
 
     doc_id = str(uuid.uuid4())
     name = filename or "unnamed"
+    entity_name, normalized_entity_name = entity_names_from_filename(name)
     doc_group, doc_parent_group, doc_child_group = normalize_group(
         group=group,
         parent_group=parent_group,
@@ -124,6 +148,8 @@ async def ingest_document_bytes(
             "group": doc_group,
             "parent_group": doc_parent_group,
             "child_group": doc_child_group,
+            "entity_name": entity_name,
+            "normalized_entity_name": normalized_entity_name,
         },
     )
     session.add(doc)
@@ -145,6 +171,8 @@ async def ingest_document_bytes(
                 "parent_group": doc_parent_group,
                 "child_group": doc_child_group,
                 "source": name,
+                "entity_name": entity_name,
+                "normalized_entity_name": normalized_entity_name,
             },
         ))
     await session.flush()
@@ -154,6 +182,9 @@ async def ingest_document_bytes(
             ctexts,
             cids,
             source=name,
+            document_id=doc_id,
+            entity_name=entity_name,
+            normalized_entity_name=normalized_entity_name,
             group=doc_group,
             parent_group=doc_parent_group,
             child_group=doc_child_group,
@@ -234,12 +265,16 @@ async def update_document_group(
         if milvus:
             ids = [c.vector_id or c.id for c in chunks]
             texts = [c.content for c in chunks]
+            entity_name, normalized_entity_name = entity_names_from_filename(doc.filename)
             try:
                 await milvus.delete(get_state()["settings"].milvus_collection_name, ids)
                 indexed_count = await embed_chunks(
                     texts,
                     ids,
                     source=doc.filename,
+                    document_id=doc.id,
+                    entity_name=entity_name,
+                    normalized_entity_name=normalized_entity_name,
                     group=group,
                     parent_group=parent_group,
                     child_group=child_group,
@@ -313,6 +348,7 @@ async def _run_reindex_job(job_id: str) -> None:
                 continue
 
             group, parent_group, child_group = groups_from_meta(doc.meta or {})
+            entity_name, normalized_entity_name = entity_names_from_filename(doc.filename)
             job["chunks"] += len(chunks)
 
             for chunk in chunks:
@@ -325,6 +361,8 @@ async def _run_reindex_job(job_id: str) -> None:
                     "child_group": child_group,
                     "chunk_index": chunk.chunk_index,
                     "document_id": str(doc.id),
+                    "entity_name": entity_name,
+                    "normalized_entity_name": normalized_entity_name,
                 })
                 if len(batch) >= batch_size:
                     await _index_reindex_batch(job, batch)
@@ -470,3 +508,8 @@ def groups_from_meta(meta: dict) -> tuple[str, str, str]:
         parent_group=str(meta.get("parent_group") or ""),
         child_group=str(meta.get("child_group") or ""),
     )
+
+
+def entity_names_from_filename(filename: str) -> tuple[str, str]:
+    entity_name = normalize_name(Path(filename or "unnamed").stem)
+    return entity_name, normalize_name(entity_name).lower()

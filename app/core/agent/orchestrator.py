@@ -445,7 +445,12 @@ class InMemoryTracer:
         self.events: List[Dict[str, Any]] = []
 
     def new_trace_id(self) -> str:
-        return str(uuid.uuid4())
+        try:
+            from app.infrastructure.observability import current_otel_trace_id
+
+            return current_otel_trace_id() or str(uuid.uuid4())
+        except Exception:
+            return str(uuid.uuid4())
 
     def start_span(self, name: str, trace_id: str, attributes: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         return {"name": name, "trace_id": trace_id, "attributes": attributes or {}}

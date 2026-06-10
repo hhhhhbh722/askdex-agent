@@ -131,3 +131,49 @@ class RAGResponse(BaseModel):
     citations: list[Citation] = Field(default_factory=list)
     raw_contexts: list[RetrievalResult] = Field(default_factory=list)
     model: str | None = None
+
+
+class AgentTraceStep(BaseModel):
+    """Frontend-facing Agent step trace schema."""
+
+    index: int
+    phase: str
+    status: str = "success"
+    action: str | None = None
+    action_input: dict[str, Any] | None = None
+    observation: str | None = None
+    duration_ms: int | None = None
+    error: str | None = None
+    span_id: str | None = Field(default=None, description="Optional OTel span_id")
+
+
+class AgentTraceRecord(BaseModel):
+    """Agent run trace schema.
+
+    When OpenTelemetry is enabled, ``trace_id`` should be the OTel trace_id.
+    """
+
+    trace_id: str
+    conversation_id: str | None = None
+    status: str
+    mode: str = "react"
+    started_at: float
+    ended_at: float | None = None
+    duration_ms: int | None = None
+    error: str | None = None
+    steps: list[AgentTraceStep] = Field(default_factory=list)
+
+
+class JobState(BaseModel):
+    """Unified background job state schema."""
+
+    job_id: str
+    job_type: str
+    status: str
+    total: int = 0
+    processed: int = 0
+    current: str = ""
+    failed: list[dict[str, Any]] = Field(default_factory=list)
+    created_at: float
+    updated_at: float
+    trace_id: str | None = Field(default=None, description="Related OTel trace_id if available")

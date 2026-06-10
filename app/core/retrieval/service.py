@@ -6,7 +6,11 @@ dependencies in, so retrieval behavior is kept away from app bootstrapping.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 from loguru import logger
+
+from app.core.kg.extractor import normalize_name
 
 
 async def rag_search(
@@ -26,6 +30,9 @@ async def rag_search(
 
     from app.core.retrieval import retrieval_pipeline
 
+    kg_results = await _kg_context_search(query, top_k=max(top_k * 2, 10), filters=filters)
+    planned_filters = _build_kg_planned_filters(filters, kg_results)
+
     vector_results = await retrieval_pipeline(
         query=query,
         embedding=embedding,
@@ -36,10 +43,22 @@ async def rag_search(
         top_k=top_k,
         hybrid=True,
         enable_hyde=True,
-        filters=filters,
+        filters=planned_filters,
     )
-    kg_results = await _kg_context_search(query, top_k=top_k, filters=filters)
-    return _fuse_retrieval_results([kg_results, vector_results], top_k=top_k)
+    if not vector_results and planned_filters is not filters:
+        vector_results = await retrieval_pipeline(
+            query=query,
+            embedding=embedding,
+            milvus=milvus,
+            collection=settings.milvus_collection_name,
+            llm=llm,
+            reranker=reranker,
+            top_k=top_k,
+            hybrid=True,
+            enable_hyde=True,
+            filters=filters,
+        )
+    return _fuse_retrieval_results([kg_results[:top_k], vector_results], top_k=top_k)
 
 
 async def _kg_context_search(query: str, top_k: int, filters: dict | None = None) -> list[dict]:
@@ -82,3 +101,38 @@ def _fuse_retrieval_results(lists: list[list[dict]], top_k: int) -> list[dict]:
         item["score"] = max(float(item.get("score") or 0), min(1.0, scores[rid] * 20))
         out.append(item)
     return out
+
+
+def _build_kg_planned_filters(filters: dict | None, kg_results: list[dict]) -> dict | None:
+    if not kg_results:
+        return filters
+
+    planned = dict(filters or {})
+    document_ids = list(dict.fromkeys(
+        str(item.get("document_id") or "").strip()
+        for item in kg_results
+        if str(item.get("document_id") or "").strip()
+    ))
+    sources = list(dict.fromkeys(
+        str(item.get("source") or "").strip()
+        for item in kg_results
+        if str(item.get("source") or "").strip() and item.get("source") != "knowledge_graph"
+    ))
+    entity_names = list(dict.fromkeys(_entity_name_from_source(source) for source in sources))
+    entity_names = [name for name in entity_names if name]
+    normalized_entity_names = list(dict.fromkeys(normalize_name(name).lower() for name in entity_names if name))
+
+    if document_ids and not planned.get("document_ids"):
+        planned["document_ids"] = document_ids[:8]
+    if sources and not planned.get("sources"):
+        planned["sources"] = sources[:8]
+    if entity_names and not planned.get("entity_names"):
+        planned["entity_names"] = entity_names[:8]
+    if normalized_entity_names and not planned.get("normalized_entity_names"):
+        planned["normalized_entity_names"] = normalized_entity_names[:8]
+    planned["kg_planned"] = True
+    return planned
+
+
+def _entity_name_from_source(source: str) -> str:
+    return normalize_name(Path(source).stem)

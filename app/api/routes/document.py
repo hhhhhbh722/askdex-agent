@@ -15,6 +15,7 @@ from app.core.documents.service import (
     start_batch_upload_job,
     start_reindex_job,
     update_document_group,
+    vector_schema_status,
 )
 from app.core.wiring import rag_search
 from app.infrastructure.database.session import get_async_session
@@ -91,6 +92,14 @@ async def get_reindex_job(job_id: str) -> dict:
     if not job:
         raise HTTPException(404, "重建索引任务不存在或服务已重启")
     return job
+
+
+@router.get("/documents/vector-schema")
+async def get_vector_schema() -> dict:
+    try:
+        return await vector_schema_status()
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc)) from exc
 
 
 @router.get("/retrieve")

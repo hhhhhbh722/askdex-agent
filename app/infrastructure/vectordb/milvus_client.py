@@ -93,6 +93,9 @@ class MilvusManager:
                 FieldSchema(name="content", dtype=DataType.VARCHAR, max_length=65535,
                             enable_analyzer=True, analyzer_params={"type": "chinese"}),
                 FieldSchema(name="source", dtype=DataType.VARCHAR, max_length=512),
+                FieldSchema(name="document_id", dtype=DataType.VARCHAR, max_length=128),
+                FieldSchema(name="entity_name", dtype=DataType.VARCHAR, max_length=256),
+                FieldSchema(name="normalized_entity_name", dtype=DataType.VARCHAR, max_length=256),
                 FieldSchema(name="group", dtype=DataType.VARCHAR, max_length=512),
                 FieldSchema(name="parent_group", dtype=DataType.VARCHAR, max_length=256),
                 FieldSchema(name="child_group", dtype=DataType.VARCHAR, max_length=256),
@@ -127,6 +130,9 @@ class MilvusManager:
         ids = [str(m.get("id", f"auto_{i}")) for i, m in enumerate(metadata)]
         contents = [str(m.get("content", ""))[:65000] for m in metadata]
         sources = [str(m.get("source", ""))[:500] for m in metadata]
+        document_ids = [str(m.get("document_id", ""))[:120] for m in metadata]
+        entity_names = [str(m.get("entity_name", ""))[:250] for m in metadata]
+        normalized_entity_names = [str(m.get("normalized_entity_name", ""))[:250] for m in metadata]
         groups = [str(m.get("group", ""))[:500] for m in metadata]
         parent_groups = [str(m.get("parent_group", ""))[:250] for m in metadata]
         child_groups = [str(m.get("child_group", ""))[:250] for m in metadata]
@@ -135,10 +141,22 @@ class MilvusManager:
 
         def _insert() -> None:
             col = Collection(collection, using=self._alias)
-            col.insert([
-                ids, contents, sources, groups, parent_groups, child_groups,
-                indexes, vectors, sparse_vectors,
-            ])
+            data_by_field = {
+                "id": ids,
+                "content": contents,
+                "source": sources,
+                "document_id": document_ids,
+                "entity_name": entity_names,
+                "normalized_entity_name": normalized_entity_names,
+                "group": groups,
+                "parent_group": parent_groups,
+                "child_group": child_groups,
+                "chunk_index": indexes,
+                "embedding": vectors,
+                _CONTENT_SPARSE: sparse_vectors,
+            }
+            field_names = [field.name for field in col.schema.fields if field.name in data_by_field]
+            col.insert([data_by_field[name] for name in field_names])
             col.flush()
 
         try:
@@ -147,6 +165,19 @@ class MilvusManager:
         except Exception as exc:
             logger.exception("插入失败: {}", exc)
             raise
+
+    async def scalar_fields(self, collection: str) -> set[str]:
+        """Return scalar field names present in the collection schema."""
+        await self._ensure_connection()
+
+        def _fields() -> set[str]:
+            col = Collection(collection, using=self._alias)
+            return {
+                field.name for field in col.schema.fields
+                if field.name not in {"embedding", _CONTENT_SPARSE}
+            }
+
+        return await _run_sync(_fields)
 
     # ---- 向量检索 ----
 
@@ -159,7 +190,7 @@ class MilvusManager:
             res = col.search(data=[query_vector], anns_field="embedding",
                              param={"metric_type": "COSINE", "params": {"nprobe": 16}},
                              limit=top_k, expr=expr,
-                             output_fields=["id", "content", "source", "group", "parent_group", "child_group"])
+                             output_fields=_output_fields(col))
             return _parse_hits(res)
         return await _run_sync(_search)
 
@@ -188,7 +219,7 @@ class MilvusManager:
                     data=[query_vector], anns_field="embedding",
                     param={"metric_type": "COSINE", "params": {"nprobe": 16}},
                     limit=top_k, expr=expr,
-                    output_fields=["id", "content", "source", "group", "parent_group", "child_group"]))
+                    output_fields=_output_fields(col)))
             sparse_req = AnnSearchRequest(
                 data=[sparse_query], anns_field=_CONTENT_SPARSE,
                 param={"metric_type": "IP"}, limit=rerank_top_k, expr=expr)
@@ -197,7 +228,7 @@ class MilvusManager:
             res = col.hybrid_search(
                 reqs=[dense_req, sparse_req], rerank=ranker,
                 limit=top_k,
-                output_fields=["id", "content", "source", "group", "parent_group", "child_group"])
+                output_fields=_output_fields(col))
             return _parse_hits(res)
 
         try:
@@ -225,7 +256,19 @@ def _parse_hits(res) -> list[dict[str, Any]]:
             out.append({"id": hit.entity.get("id"), "distance": float(hit.distance),
                         "content": hit.entity.get("content", ""),
                         "source": hit.entity.get("source", ""),
+                        "document_id": hit.entity.get("document_id", ""),
+                        "entity_name": hit.entity.get("entity_name", ""),
+                        "normalized_entity_name": hit.entity.get("normalized_entity_name", ""),
                         "group": hit.entity.get("group", ""),
                         "parent_group": hit.entity.get("parent_group", ""),
                         "child_group": hit.entity.get("child_group", "")})
     return out
+
+
+def _output_fields(collection) -> list[str]:
+    wanted = [
+        "id", "content", "source", "document_id", "entity_name",
+        "normalized_entity_name", "group", "parent_group", "child_group",
+    ]
+    available = {field.name for field in collection.schema.fields}
+    return [field for field in wanted if field in available]

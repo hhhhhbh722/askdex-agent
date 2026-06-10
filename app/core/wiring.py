@@ -105,6 +105,9 @@ async def embed_chunks(
     chunks: list[str],
     chunk_ids: list[str],
     source: str = "",
+    document_id: str = "",
+    entity_name: str = "",
+    normalized_entity_name: str = "",
     group: str = "",
     parent_group: str = "",
     child_group: str = "",
@@ -117,6 +120,9 @@ async def embed_chunks(
         "id": cid,
         "content": text[:65000],
         "source": source,
+        "document_id": document_id,
+        "entity_name": entity_name,
+        "normalized_entity_name": normalized_entity_name,
         "group": group,
         "parent_group": parent_group,
         "child_group": child_group,
@@ -206,14 +212,30 @@ def build_agent(settings, embedding, milvus, redis):
 
     # 配置
     config = _AgentConfig()
+    tracer = _build_agent_tracer(redis, settings, InMemoryTracer)
+    _state["agent_tracer"] = tracer
 
     return AgentOrchestrator(
         config=config, model_router=_ModelRouterAdapter(router),
-        memory_manager=memory, tool_registry=tools, tracer=InMemoryTracer(),
+        memory_manager=memory, tool_registry=tools, tracer=tracer,
     )
 
 
 # ---- 适配器 ----
+
+def _build_agent_tracer(redis, settings, fallback_cls):
+    if redis:
+        try:
+            from app.infrastructure.trace.redis_trace_store import RedisAgentTracer
+
+            return RedisAgentTracer(
+                redis_client=redis,
+                ttl_seconds=settings.redis_memory_ttl_seconds,
+            )
+        except Exception as e:
+            logger.warning("Redis Agent trace store unavailable, fallback to memory: {}", e)
+    return fallback_cls()
+
 
 class _ModelRouterAdapter:
     """将 ModelRouter 适配为 Orchestrator 期望的 get_llm(purpose) 接口。"""
